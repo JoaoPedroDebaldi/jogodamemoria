@@ -1,0 +1,214 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+	<head>
+		<meta charset="UTF-8">
+			<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+				<title>Jogo da Memória dos Memes 🧠</title>
+				<script src="https://cdn.tailwindcss.com"></script>
+				<style>
+					@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap');
+
+					body {
+					font-family: 'Nunito', sans-serif;
+					background: linear-gradient(135deg, #fbcfe8 0%, #f472b6 100%);
+					min-height: screen;
+					}
+
+					.card-container {
+					perspective: 1000px;
+					}
+
+					.card-inner {
+					transition: transform 0.6s;
+					transform-style: preserve-3d;
+					}
+
+					.flipped .card-inner {
+					transform: rotateY(180deg);
+					}
+
+					.card-front, .card-back {
+					backface-visibility: hidden;
+					}
+
+					.card-back {
+					transform: rotateY(180deg);
+					}
+				</style>
+			</head>
+	<body class="flex flex-col items-center justify-start py-6 px-4">
+
+		<!-- Header / Placar -->
+		<div class="w-full max-w-md text-center bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-pink-200 mb-6 z-10">
+			<h1 class="text-2xl md:text-3xl font-black text-pink-600 mb-2 leading-none">Jogo da Memória! 🧠</h1>
+			<p class="text-gray-600 font-semibold mb-4 text-sm">Ache os pares o mais rápido possível!</p>
+
+			<div class="flex justify-around text-gray-800 font-extrabold text-sm md:text-base border-t border-pink-100 pt-3">
+				<div>
+					Tempo: <span id="timer" class="text-pink-500">0.0s</span>
+				</div>
+				<div>
+					Pares: <span id="pairs-count" class="text-pink-500">0/8</span>
+				</div>
+			</div>
+		</div>
+
+		<!-- Tabuleiro de Cartas (4x4) -->
+		<div id="game-board" class="grid grid-cols-4 gap-2 md:gap-3 w-full max-w-md aspect-square mb-6">
+			<!-- As 16 cartas serão injetadas via JavaScript -->
+		</div>
+
+		<!-- Modal de Vitória -->
+		<div id="win-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+			<div class="bg-white p-6 md:p-8 rounded-3xl shadow-2xl text-center max-w-xs w-full border-4 border-pink-300">
+				<div class="text-6xl mb-4">👑</div>
+				<h2 class="text-3xl font-black text-pink-600 mb-2">Vitória!</h2>
+				<p class="text-gray-700 font-bold mb-4">Você completou o jogo!</p>
+				<p class="text-lg text-gray-600 mb-6 font-semibold">
+					Seu tempo: <span id="final-time" class="text-pink-500 font-extrabold">0.0s</span> ⏱️
+				</p>
+
+				<button id="restart-btn" class="w-full bg-gradient-to-tr from-pink-400 to-purple-600 text-white font-black py-4 px-6 rounded-full text-lg shadow-lg hover:brightness-110 active:scale-95 transition-transform">
+					Jogar de Novo 🔄
+				</button>
+			</div>
+		</div>
+
+		<script>
+			const board = document.getElementById('game-board');
+			const timerEl = document.getElementById('timer');
+			const pairsEl = document.getElementById('pairs-count');
+			const winModal = document.getElementById('win-modal');
+			const finalTimeEl = document.getElementById('final-time');
+			const restartBtn = document.getElementById('restart-btn');
+
+			// Suas 8 imagens agora formando os 8 pares (total 16 cartas)
+			const memeImages = [
+			'1.jpeg', '2.jpeg', '3.jpeg', '4.jpeg',
+			'5.jpeg', '6.jpeg', '7.jpeg', '8.jpeg'
+			];
+
+			// Duplica para fazer os pares
+			let cardsArray = [...memeImages, ...memeImages];
+
+			let flippedCards = [];
+			let matchedPairs = 0;
+			let timerStarted = false;
+			let startTime;
+			let timerInterval;
+			let lockBoard = false;
+
+			function shuffle(array) {
+			for (let i = array.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[array[i], array[j]] = [array[j], array[i]];
+			}
+			return array;
+			}
+
+			function createBoard() {
+			board.innerHTML = '';
+			// Embaralha as 16 cartas
+			shuffle(cardsArray);
+
+			cardsArray.forEach((src, index) => {
+			const card = document.createElement('div');
+			card.className = 'card-container aspect-square cursor-pointer';
+			card.dataset.src = src;
+
+			card.innerHTML = `
+			<div class="card-inner w-full h-full relative rounded-xl shadow-md pointer-events-none transform transition-transform duration-300">
+				<!-- Verso (Costas) -->
+				<div class="card-front absolute inset-0 bg-gradient-to-tr from-pink-300 to-purple-400 rounded-xl border-2 border-white flex items-center justify-center text-3xl font-black text-white shadow-inner">
+					💖
+				</div>
+				<!-- Frente (Imagem) -->
+				<div class="card-back absolute inset-0 bg-white rounded-xl border-2 border-white overflow-hidden">
+					<img src="${src}" class="w-full h-full object-cover">
+                        </div>
+			</div>
+			`;
+
+			card.addEventListener('click', flipCard);
+			board.appendChild(card);
+			});
+			}
+
+			function flipCard() {
+			if (lockBoard) return;
+			const clickedCard = this;
+			if (flippedCards.includes(clickedCard)) return;
+
+			// Inicia o cronômetro no primeiro clique
+			if (!timerStarted) {
+			timerStarted = true;
+			startTime = Date.now();
+			timerInterval = setInterval(updateTimer, 100);
+			}
+
+			// Vira a carta visualmente
+			clickedCard.classList.add('flipped');
+			flippedCards.push(clickedCard);
+
+			if (flippedCards.length === 2) {
+			checkMatch();
+			}
+			}
+
+			function checkMatch() {
+			const [card1, card2] = flippedCards;
+			const isMatch = card1.dataset.src === card2.dataset.src;
+
+			if (isMatch) {
+			// Par encontrado
+			matchedPairs++;
+			pairsEl.innerText = `${matchedPairs}/8`;
+			flippedCards = [];
+
+			if (matchedPairs === 8) {
+			clearInterval(timerInterval);
+			setTimeout(showWinScreen, 500);
+			}
+			} else {
+			// Não é par, desvira depois de 1 segundo
+			lockBoard = true;
+			setTimeout(() => {
+			card1.classList.remove('flipped');
+			card2.classList.remove('flipped');
+			flippedCards = [];
+			lockBoard = false;
+			}, 1000);
+			}
+			}
+
+			function updateTimer() {
+			const elapsed = (Date.now() - startTime) / 1000;
+			timerEl.innerText = `${elapsed.toFixed(1)}s`;
+			}
+
+			function showWinScreen() {
+			const finalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+			finalTimeEl.innerText = `${finalTime}s`;
+			winModal.classList.remove('hidden');
+			}
+
+			function resetGame() {
+			winModal.classList.add('hidden');
+			clearInterval(timerInterval);
+			timerInterval = null;
+			timerStarted = false;
+			matchedPairs = 0;
+			flippedCards = [];
+			timerEl.innerText = '0.0s';
+			pairsEl.innerText = '0/8';
+			lockBoard = false;
+			createBoard();
+			}
+
+			restartBtn.addEventListener('click', resetGame);
+
+			// Inicializa o jogo
+			createBoard();
+		</script>
+	</body>
+</html>
